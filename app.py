@@ -1,18 +1,22 @@
 import os
 import speech_recognition as sr
 import pyttsx3
-import sqlite3
+import pymongo
+from pymongo import MongoClient
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import make_pipeline
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 
 # Initialize speech recognizer and text-to-speech engine
 recognizer = sr.Recognizer()
 engine = pyttsx3.init()
 
-# Directory and database for storing chatbot data
-DATA_DIR = "chatbot_data"
-DATABASE = "chatbot.db"
+# MongoDB connection
+client = MongoClient('mongodb://localhost:27017/')
+db = client['chatbot_db']
+interactions_collection = db['interactions']
 
 def recognize_speech():
     with sr.Microphone() as source:
@@ -36,38 +40,35 @@ def speak_text(text):
     engine.runAndWait()
 
 def initialize_database():
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS interactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        input TEXT,
-        output TEXT
-    )
-    """)
-    conn.commit()
-    conn.close()
+    interactions_collection.create_index([('input', pymongo.TEXT)])
 
 def store_data(input_text, output_text):
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO interactions (input, output) VALUES (?, ?)", (input_text, output_text))
-    conn.commit()
-    conn.close()
+    interactions_collection.insert_one({'input': input_text, 'output': output_text})
 
 def train_classifier():
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT input, output FROM interactions")
-    data = cursor.fetchall()
-    conn.close()
+    inputs = []
+    outputs = []
+    for interaction in interactions_collection.find():
+        inputs.append(interaction['input'])
+        outputs.append(interaction['output'])
 
-    inputs = [row[0] for row in data]
-    outputs = [row[1] for row in data]
+    # Preprocess inputs and outputs
+    preprocessed_inputs = [preprocess_text(input_text) for input_text in inputs]
+    preprocessed_outputs = [preprocess_text(output_text) for output_text in outputs]
 
     model = make_pipeline(CountVectorizer(), MultinomialNB())
-    model.fit(inputs, outputs)
+    model.fit(preprocessed_inputs, preprocessed_outputs)
     return model
+
+def preprocess_text(text):
+    # Tokenize the text
+    tokens = word_tokenize(text)
+    # Remove stopwords
+    stop_words = set(stopwords.words('english'))
+    filtered_tokens = [word for word in tokens if word.lower() not in stop_words]
+    # Join tokens back into a string
+    preprocessed_text = ' '.join(filtered_tokens)
+    return preprocessed_text
 
 def chatbot():
     initialize_database()
@@ -89,4 +90,5 @@ def chatbot():
         store_data(text, response)
 
 # Example usage:
-chatbot()
+if __name__ == "__main__":
+    chatbot()
