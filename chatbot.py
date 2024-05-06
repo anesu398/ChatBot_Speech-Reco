@@ -57,9 +57,30 @@ def train_classifier():
     model = make_pipeline(CountVectorizer(), MultinomialNB())
     model.fit(inputs, outputs)
     return model
+def chatbot():
+    initialize_database()
+    model = train_classifier()
+    speak_text("Hello, how can I help you?")
+    while True:
+        text = recognize_speech()
+        intent = model.predict([text])[0]
+        if intent == "greet":
+            response = "Hi there!"
+        elif intent == "goodbye":
+            response = "Goodbye!"
+            speak_text(response)
+            break
+        else:
+            response = "I'm sorry, I didn't understand that."
+        speak_text(response)
+
+        store_data(text, response)
+
+# Example usage:
+
 
 # Example usage:
 initialize_database()
-# chatbot()  # Uncomment this line if you have a chatbot function defined
+chatbot()  # Uncomment this line if you have a chatbot function defined
 
 # Note: You need to define the chatbot function or remove the chatbot() call if not needed.
